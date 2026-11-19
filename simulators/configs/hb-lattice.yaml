@@ -1,0 +1,6 @@
+# Default run parameters for hb-lattice, read by run.sh (override with environment variables).
+matrix: aa_water2       # name in matrices/ or a path
+water_index: 20         # -indxWater; "none" for matrices without a water row
+temperature: 0.3        # reduced units; run.sh passes -minT T -maxT T -noSwap
+steps: 1000             # Monte Carlo steps per round (-S)
+rounds: 100             # rounds (-W); result.json samples statistics once per round

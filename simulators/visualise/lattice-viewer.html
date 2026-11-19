@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Lattice trajectory</title>
+<style>
+  body { margin: 24px; font: 15px system-ui, sans-serif; color: #202832; background: #f6f8fa; }
+  main { max-width: 1000px; margin: auto; }
+  h1 { font-size: 22px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+  #step { flex: 1; min-width: 140px; }
+  canvas { display: block; width: 100%; height: clamp(360px, 65vh, 650px); background: white;
+    border: 1px solid #cbd2d9; cursor: grab; touch-action: none; }
+  canvas:active { cursor: grabbing; }
+  #residue { min-height: 1.5em; }
+</style>
+<main>
+  <h1>Lattice trajectory</h1>
+  <label>Trajectory <input id="file" type="file" accept=".tsv,text/tab-separated-values"></label>
+  <div class="controls">
+    <button id="previous" disabled>Previous</button>
+    <button id="play" disabled>Play</button>
+    <button id="next" disabled>Next</button>
+    <input id="step" type="range" min="0" max="0" value="0" aria-label="Frame" disabled>
+    <output id="status" aria-live="polite">Open a run's lattice-trajectory-N0.tsv.</output>
+  </div>
+  <p>Drag to rotate. Scroll to zoom. Squares are strand residues, circles are coil residues.
+    Each color is a chain. Short lines show side-chain direction (hb-lattice only).</p>
+  <canvas id="view" aria-label="Rotatable view of the lattice"></canvas>
+  <p id="residue"></p>
+</main>
+<pre id="embedded-trace" hidden><!-- trajectory --></pre>
+<script>
+"use strict";
+
+const file = document.querySelector("#file");
+const canvas = document.querySelector("#view");
+const ctx = canvas.getContext("2d");
+const step = document.querySelector("#step");
+const status = document.querySelector("#status");
+const residue = document.querySelector("#residue");
+const previous = document.querySelector("#previous");
+const next = document.querySelector("#next");
+const play = document.querySelector("#play");
+
+let frames = [];
+let index = 0;
+let timer;
+let yaw = -0.6;
+let pitch = 0.35;
+let zoom = 1;
+let drag = null;
+let dots = [];
+let bounds;
+
+function parseTrace(text) {
+  const result = [];
+  for (const line of text.trim().split(/\r?\n/)) {
+    const fields = line.split("\t");
+    if (fields[0] === "frame" && fields.length === 2 &&
+        Number(fields[1]) === result.length) {
+      result.push({ number: Number(fields[1]), residues: [] });
+      continue;
+    }
+    const frame = result.at(-1);
+    const [chain, number, aa, x, y, z, dx, dy, dz, state] = fields;
+    if (!frame || fields.length !== 10 || !aa ||
+        ![chain, number, x, y, z, dx, dy, dz].every(
+          value => value !== "" && Number.isInteger(Number(value))) ||
+        !["coil", "strand"].includes(state)) {
+      throw new Error("Could not read this lattice trajectory.");
+    }
+    frame.residues.push({
+      chain: Number(chain), number: Number(number), aa, state,
+      position: [Number(x), Number(y), Number(z)],
+      spin: [Number(dx), Number(dy), Number(dz)],
+    });
+  }
+  return result;
+}
+
+function getBounds(trajectory) {
+  const low = [Infinity, Infinity, Infinity];
+  const high = [-Infinity, -Infinity, -Infinity];
+  for (const frame of trajectory) {
+    for (const { position } of frame.residues) {
+      position.forEach((value, axis) => {
+        low[axis] = Math.min(low[axis], value - 1);
+        high[axis] = Math.max(high[axis], value + 1);
+      });
+    }
+  }
+  return Number.isFinite(low[0]) ? { low, high } :
+    { low: [-1, -1, -1], high: [1, 1, 1] };
+}
+
+function draw() {
+  const { width, height } = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  dots = [];
+  if (!frames.length) return;
+
+  const { low, high } = bounds;
+  const center = low.map((value, axis) => (value + high[axis]) / 2);
+  const span = Math.hypot(...low.map((value, axis) => high[axis] - value));
+  const scale = zoom * Math.min(width, height) * 0.8 / span;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  function project(position) {
+    const [x, y, z] = position.map((value, axis) => value - center[axis]);
+    const across = cy * x - sy * y;
+    const depth = sy * x + cy * y;
+    return {
+      x: width / 2 + across * scale,
+      y: height / 2 + (sp * depth - cp * z) * scale,
+      depth: cp * depth + sp * z,
+    };
+  }
+
+  function line(a, b, color, width) {
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
+
+  const [x0, y0, z0] = low;
+  const [x1, y1] = high;
+  const stride = Math.max(1, Math.ceil(Math.max(x1 - x0, y1 - y0) / 25));
+  for (let x = x0; x <= x1; x += stride) {
+    line(project([x, y0, z0]), project([x, y1, z0]), "#e0e5eb", 1);
+  }
+  for (let y = y0; y <= y1; y += stride) {
+    line(project([x0, y, z0]), project([x1, y, z0]), "#e0e5eb", 1);
+  }
+  const origin = project(low);
+  const axes = [[x1, y0, z0], [x0, y1, z0], [x0, y0, high[2]]];
+  ctx.fillStyle = "#526071";
+  for (const [axis, position] of axes.entries()) {
+    const end = project(position);
+    line(origin, end, "#a7b0ba", 1);
+    ctx.fillText("xyz"[axis], end.x + 4, end.y);
+  }
+
+  const entries = frames[index].residues.map(data => ({
+    data, point: project(data.position),
+    tip: project(data.position.map((value, axis) => value + 0.45 * data.spin[axis])),
+    color: `hsl(${data.chain * 137.5 % 360} 65% 38%)`,
+  }));
+  for (let i = 1; i < entries.length; i++) {
+    const a = entries[i - 1], b = entries[i];
+    const distance = a.data.position.reduce(
+      (sum, value, axis) => sum + Math.abs(value - b.data.position[axis]), 0);
+    // A bond crossing a periodic boundary would span the box in this view.
+    if (a.data.chain === b.data.chain && b.data.number === a.data.number + 1 && distance === 1) {
+      line(a.point, b.point, a.color, 2);
+    }
+  }
+
+  dots = entries.sort((a, b) => b.point.depth - a.point.depth);
+  for (const { point, tip, data, color } of dots) {
+    line(point, tip, color, 2);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, 2.5, 0, 2 * Math.PI);
+    ctx.fill();
+    if (data.state === "strand") {
+      ctx.fillRect(point.x - 4, point.y - 4, 8, 8);
+    } else {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 4.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+}
+
+function showFrame(value) {
+  index = value;
+  step.value = index;
+  const frame = frames[index];
+  status.textContent = frame.number === 0 ? "Step 0 (initial)" :
+    `Step ${frame.number} / ${frames.at(-1).number}`;
+  previous.disabled = index === 0;
+  next.disabled = index === frames.length - 1;
+  residue.textContent = "";
+  draw();
+}
+
+function pause() {
+  clearInterval(timer);
+  timer = undefined;
+  play.textContent = "Play";
+}
+
+function loadTrace(text) {
+  const loaded = parseTrace(text);
+  bounds = getBounds(loaded);
+  frames = loaded;
+  zoom = 1;
+  step.max = frames.length - 1;
+  step.disabled = play.disabled = frames.length < 2;
+  showFrame(0);
+}
+
+file.addEventListener("change", async () => {
+  const selected = file.files[0];
+  if (!selected) return;
+  pause();
+  try {
+    const text = await selected.text();
+    if (selected !== file.files[0]) return;
+    loadTrace(text);
+  } catch (error) {
+    if (selected !== file.files[0]) return;
+    frames = [];
+    previous.disabled = next.disabled = step.disabled = play.disabled = true;
+    status.textContent = error.message;
+    residue.textContent = "";
+    draw();
+  }
+});
+
+previous.onclick = () => { pause(); showFrame(index - 1); };
+next.onclick = () => { pause(); showFrame(index + 1); };
+step.oninput = () => { pause(); showFrame(Number(step.value)); };
+play.onclick = () => {
+  if (timer !== undefined) {
+    pause();
+    return;
+  }
+  if (index === frames.length - 1) showFrame(0);
+  play.textContent = "Pause";
+  timer = setInterval(() => {
+    showFrame(index + 1);
+    if (index === frames.length - 1) pause();
+  }, 400);
+};
+
+canvas.onpointerdown = event => {
+  drag = [event.clientX, event.clientY];
+  canvas.setPointerCapture(event.pointerId);
+};
+canvas.onlostpointercapture = () => { drag = null; };
+canvas.onpointermove = event => {
+  if (drag) {
+    yaw += (event.clientX - drag[0]) * 0.012;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2,
+      pitch + (event.clientY - drag[1]) * 0.012));
+    drag = [event.clientX, event.clientY];
+    draw();
+    return;
+  }
+  const box = canvas.getBoundingClientRect();
+  const hit = dots.findLast(({ point }) =>
+    Math.hypot(point.x - event.clientX + box.left, point.y - event.clientY + box.top) < 7);
+  residue.textContent = hit ?
+    `Chain ${hit.data.chain} · residue ${hit.data.number} ${hit.data.aa} · r[${hit.data.position.join("][")}] · ${hit.data.state} · spin (${hit.data.spin.join(", ")})` : "";
+};
+canvas.onpointerleave = () => { residue.textContent = ""; };
+canvas.addEventListener("wheel", event => {
+  if (!frames.length) return;
+  event.preventDefault();
+  zoom = Math.max(0.3, Math.min(12, zoom * Math.exp(-event.deltaY * 0.002)));
+  draw();
+}, { passive: false });
+new ResizeObserver(draw).observe(canvas);
+const embedded = document.querySelector("#embedded-trace").textContent;
+if (embedded.trim()) loadTrace(embedded);
+</script>
+</html>

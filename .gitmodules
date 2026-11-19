@@ -1,3 +1,6 @@
 [submodule "hb-lattice"]
-	path = simulators/hb-lattice
+	path = simulators/external/hb-lattice
 	url = https://github.com/Vlad-Andres/hb-lattice.git
+[submodule "LatticeWater"]
+	path = simulators/external/LatticeWater
+	url = https://github.com/Vlad-Andres/LatticeWater.git

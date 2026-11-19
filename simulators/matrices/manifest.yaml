@@ -1,0 +1,36 @@
+# Interaction matrices. water_index is passed as -indxWater
+- name: aa_water2
+  file: aa_water2.txt
+  water_index: 20
+  origin: external/hb-lattice/matrices/aa_water2.txt (identical in LatticeWater/LatticeFiles/input)
+  notes: 20 amino acids + HOH; used by the run scripts of both simulators
+- name: Psol_Cb_4NB
+  file: Psol_Cb_4NB.txt
+  water_index: 20
+  origin: external/hb-lattice/matrices/Psol_Cb_4NB.txt (identical in LatticeWater)
+  notes: 20 amino acids + HOH
+- name: Psol_Cb_4NB_2
+  file: Psol_Cb_4NB_2.txt
+  water_index: 20
+  origin: external/hb-lattice/matrices/Psol_Cb_4NB_2.txt (identical in LatticeWater)
+  notes: 20 amino acids + HOH; used by LatticeWater design.sh
+- name: Pnos_Cb_4NB
+  file: Pnos_Cb_4NB.txt
+  water_index: null
+  origin: external/hb-lattice/matrices/Pnos_Cb_4NB.txt (identical in LatticeWater)
+  notes: 20 amino acids, no water row
+- name: aa
+  file: aa.txt
+  water_index: null
+  origin: external/hb-lattice/matrices/aa.txt (identical in LatticeWater)
+  notes: 20 amino acids, no water row
+- name: Betancourt_hb
+  file: Betancourt_hb.txt
+  water_index: null
+  origin: external/hb-lattice/matrices/Betancourt.txt
+  notes: 20 amino acids, no water row
+- name: Betancourt_lw
+  file: Betancourt_lw.txt
+  water_index: null
+  origin: external/LatticeWater/LatticeFiles/input/Betancourt.txt
+  notes: differs from Betancourt_hb in three Lys/Glu entries (21.01, 21.04, 21.28 instead of -1.01, -1.04, -1.28)
