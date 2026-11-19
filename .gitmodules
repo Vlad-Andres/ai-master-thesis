@@ -1,3 +1,3 @@
 [submodule "hb-lattice"]
-	path = hb-lattice
+	path = simulators/hb-lattice
 	url = https://github.com/Vlad-Andres/hb-lattice.git
