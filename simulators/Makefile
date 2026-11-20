@@ -6,18 +6,18 @@
 #   make test        checks that the fork flags change nothing (single and multi-rank)
 #   make clean
 #
-# SEED, STEPS, ROUNDS, TEMPERATURE, MATRIX, WATER_INDEX and OUT are passed to run.sh.
+# SEED, STEPS, ROUNDS, TEMPERATURE, MATRIX, WATER_INDEX, OUT, NP, TMIN, TMAX and MPIRUN are passed to run.sh.
 
-CLION_CMAKE := /Applications/CLion.app/Contents/bin/cmake/mac/aarch64/bin/cmake
-CMAKE ?= $(shell command -v cmake 2>/dev/null || echo $(CLION_CMAKE))
+CMAKE ?= cmake
 BUILD_DIR ?= build
-JOBS ?= 8
+JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
-export SEED STEPS ROUNDS TEMPERATURE MATRIX WATER_INDEX OUT
+export SEED STEPS ROUNDS TEMPERATURE MATRIX WATER_INDEX OUT NP TMIN TMAX MPIRUN
 
 .PHONY: build run visualise test clean
 
 build:
+	@command -v "$(CMAKE)" >/dev/null || { echo "cmake not found: install it (brew install cmake / apt install cmake) or pass CMAKE=/path/to/cmake"; exit 127; }
 	"$(CMAKE)" -S . -B "$(BUILD_DIR)"
 	"$(CMAKE)" --build "$(BUILD_DIR)" -j $(JOBS)
 

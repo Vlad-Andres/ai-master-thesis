@@ -12,13 +12,16 @@
 #   TEMPERATURE  STEPS (per round, -S)  ROUNDS (-W)
 #   SEED         random if unset
 #   OUT          output folder (default runs/SIM-STRUCTURE-SEED-TIME)
+#   NP           MPI processes (replicas), default 1; NP>1 runs under $MPIRUN (default mpirun)
+#   TMIN TMAX    temperature range for parallel tempering (default: both TEMPERATURE)
 #
 # Every run writes into its own folder, so any number can run at the same time.
+# These are defaults only: extra flags are passed to the simulator unchanged.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 [ $# -ge 2 ] || usage
 sim="$1"; structure="$2"; shift 2
 
@@ -41,17 +44,33 @@ water_index="${WATER_INDEX:-$(config water_index)}"
 temperature="${TEMPERATURE:-$(config temperature)}"
 steps="${STEPS:-$(config steps)}"
 rounds="${ROUNDS:-$(config rounds)}"
+tmin="${TMIN:-$temperature}"
+tmax="${TMAX:-$temperature}"
+np="${NP:-1}"
+mpirun="${MPIRUN:-mpirun}"
 seed="${SEED:-$RANDOM$RANDOM}"
 name="$(basename "$structure" .pdb)"
 out="${OUT:-$here/runs/$sim-$name-$seed-$(date +%Y%m%d-%H%M%S)}"
+
+if [ "$np" -le 1 ] && [ "$tmin" != "$tmax" ]; then
+  echo "a temperature range (TMIN=$tmin TMAX=$tmax) needs NP>1, one process per temperature" >&2; exit 2
+fi
+if [ "$np" -gt 1 ]; then
+  command -v "$mpirun" > /dev/null || { echo "$mpirun not found; install MPI or set MPIRUN" >&2; exit 1; }
+  command -v jq > /dev/null || { echo "jq not found; needed to merge per-replica results" >&2; exit 1; }
+fi
 
 structure="$(absolute "$structure")"
 matrix="$(absolute "$matrix")"
 mkdir -p "$out"
 
 args=(-i "$structure" -aa "$matrix"
-      -minT "$temperature" -maxT "$temperature" -S "$steps" -W "$rounds" -noSwap
+      -minT "$tmin" -maxT "$tmax" -S "$steps" -W "$rounds"
       -seed "$seed" -resultJson result.json)
+# Temperature swaps only make sense between replicas at different temperatures.
+if [ "$np" -le 1 ] || [ "$tmin" = "$tmax" ]; then
+  args+=(-noSwap)
+fi
 if [ -n "$water_index" ] && [ "$water_index" != none ]; then
   args+=(-indxWater "$water_index")
 fi
@@ -60,9 +79,18 @@ if [ "$sim" = latticewater ] && [[ " $* " != *" -native "* ]]; then
   args+=(-native "$structure")
 fi
 
-if ! (cd "$out" && "$exe" "${args[@]}" "$@" > stdout.txt 2>&1); then
+launch=("$exe")
+[ "$np" -gt 1 ] && launch=("$mpirun" -np "$np" "$exe")
+
+if ! (cd "$out" && "${launch[@]}" "${args[@]}" "$@" > stdout.txt 2>&1); then
   echo "simulation failed; see $out/stdout.txt" >&2
   tail -5 "$out/stdout.txt" >&2
   exit 1
+fi
+# With several replicas each rank writes result_N<rank>.json; merge them into one file.
+if [ "$np" -gt 1 ]; then
+  jq -s '{schema: 1, simulator: .[0].simulator, seed: .[0].seed, num_procs: length,
+          replicas: sort_by(.rank)}' "$out"/result_N*.json > "$out/result.json"
+  rm "$out"/result_N*.json
 fi
 echo "$out/result.json"
