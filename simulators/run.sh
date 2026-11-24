@@ -26,8 +26,8 @@ usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 sim="$1"; structure="$2"; shift 2
 
 case "$sim" in
-  hb-lattice)   exe="$here/build/bin/hblattice" ;;
-  latticewater) exe="$here/build/bin/grancan" ;;
+  hb-lattice)   exe="$here/build/bin/hblattice"; src="$here/external/hb-lattice" ;;
+  latticewater) exe="$here/build/bin/grancan";   src="$here/external/LatticeWater" ;;
   *) echo "unknown simulator: $sim (use hb-lattice or latticewater)" >&2; exit 2 ;;
 esac
 [ -x "$exe" ] || { echo "$exe not found; run 'make build' first" >&2; exit 1; }
@@ -63,6 +63,15 @@ fi
 structure="$(absolute "$structure")"
 matrix="$(absolute "$matrix")"
 mkdir -p "$out"
+
+# Record which simulator source this run came from (the submodule is not pinned, see .gitmodules).
+# "dirty" means the checkout had uncommitted changes; rebuild with 'make build' after 'make update'.
+{
+  echo "simulator: $sim"
+  echo "commit: $(git -C "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
+  git -C "$src" diff --quiet HEAD 2>/dev/null || echo "dirty: true"
+  echo "binary_built: $(date -r "$exe" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)"
+} > "$out/version.txt"
 
 args=(-i "$structure" -aa "$matrix"
       -minT "$tmin" -maxT "$tmax" -S "$steps" -W "$rounds"

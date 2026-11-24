@@ -1,5 +1,6 @@
 # Simulators: build both lattice simulators, run them, watch a run.
 #
+#   make update      pull the latest main of both simulator forks, then rebuild
 #   make build
 #   make run SIM=hb-lattice PDB=structures/seeds/sd10_pAA7.pdb [SEED=1 STEPS=500 ROUNDS=20] [ARGS="-hbondStats"]
 #   make visualise SIM=latticewater PDB=structures/lw/P1_Fixed.pdb
@@ -14,7 +15,11 @@ JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
 export SEED STEPS ROUNDS TEMPERATURE MATRIX WATER_INDEX OUT NP TMIN TMAX MPIRUN
 
-.PHONY: build run visualise test clean
+.PHONY: update build run visualise test clean
+
+update:
+	git submodule update --init --remote --merge
+	@$(MAKE) build
 
 build:
 	@command -v "$(CMAKE)" >/dev/null || { echo "cmake not found: install it (brew install cmake / apt install cmake) or pass CMAKE=/path/to/cmake"; exit 127; }

@@ -1,6 +1,10 @@
 [submodule "hb-lattice"]
 	path = simulators/external/hb-lattice
 	url = https://github.com/Vlad-Andres/hb-lattice.git
+	branch = main
+	ignore = all
 [submodule "LatticeWater"]
 	path = simulators/external/LatticeWater
 	url = https://github.com/Vlad-Andres/LatticeWater.git
+	branch = main
+	ignore = all
