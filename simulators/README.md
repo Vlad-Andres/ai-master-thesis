@@ -75,9 +75,7 @@ make run SIM=hb-lattice PDB=structures/seeds/sd10_pAA7.pdb NP=4 TMIN=0.25 TMAX=0
 ```
 
 Other simulator flags (`-movie`, `-getCext`, …; see `source/App.cpp` in each
-simulator) go after the structure, or in `ARGS="…"` with make. For LatticeWater,
-`run.sh` adds `-native <structure>`, because LatticeWater crashes at the end of a
-run without one.
+simulator) go after the structure, or in `ARGS="…"` with make.
 
 Example of multi-run:
 
@@ -99,8 +97,83 @@ yourself with `mpirun -np N`. With `-resultJson out.json`, each rank writes
   `rounds`, `argv` and `wall_seconds`.
 
 The counters are `Etot`, `Eint` (within a chain), `Eext` (between chains), `Esol`,
-contacts `Ctot`/`Cint`/`Cext`, and native contacts `Nint`/`Next`/`Ntot`.
+and contacts `Ctot`/`Cint`/`Cext`. `Nint`/`Next`/`Ntot` are always 0 in our runs
+and can be ignored.
 hb-lattice also has hydrogen bonds `Hint`/`Hext`/`Htot`.
+
+## Output files
+
+### How a run is structured
+
+```
+-W rounds
+ └─ each round: -S Monte Carlo steps
+      └─ each step: pick a random chain, try one small move
+```
+
+`STEPS=500 ROUNDS=20` is 10,000 steps. In each step the simulator picks a random
+chain and tries a move of one residue.
+
+### Files in a run folder
+
+`<rank>` is the MPI rank: `0` for a single process.
+
+| File | Written by | Contents |
+|---|---|---|
+| `result.json` | fork (`-resultJson`) | Summary, see above |
+| `statsTable<rank>.txt` | simulator | One row per round: a snapshot of the current state. See below |
+| `stats_N<rank>.tab` | simulator | Tally of one quantity over **every** step. See below |
+| `eMap_N<rank>.tab` | simulator | The same kind of tally, over total energy |
+| `clusterSizeN<rank>.tab` | simulator (LatticeWater) | Cluster sizes. Only filled in grand-canonical mode, so it's empty in normal runs |
+| `outN<rank>.pdb` | simulator | Final conformation |
+| `lattice-trajectory-N<rank>.tsv`, `lattice-viewer.html` | fork (`-visualise`) | Trajectory and viewer |
+| `stdout.txt` | `run.sh` | The simulator's terminal output, including the initial and final stats |
+| `version.txt` | `run.sh` | Simulator commit and binary build time |
+
+### statsTable<rank>.txt
+
+| Column | Meaning |
+|---|---|
+| `step` | Round number, from 0. Row 0 is the state after the first round, not the input structure |
+| `T`, `beta` | Temperature and 1/T |
+| `weight` | 1, except in grand-canonical mode |
+| `Eint` | Energy of contacts **within** a chain |
+| `Eext` | Energy of contacts **between** chains |
+| `Esol` | Energy of residues touching water. Water is any empty lattice site |
+| `Etot` | `Eint + Eext + Esol` |
+| `Cint`, `Cext`, `Ctot` | Number of contacts within chains, between chains, and in total |
+| `Hint`, `Hext`, `Htot` | hb-lattice with `-hbondStats`: hydrogen bonds within, between, total |
+
+LatticeWater adds water columns. Its "hydrophobic" residues are those with a
+positive water interaction in the matrix.
+
+| Column | Meaning |
+|---|---|
+| `solvHN` | Hydrophobic residues with at least one water neighbour |
+| `solvN` | All residues with at least one water neighbour |
+| `wcHN` | Hydrophobic–water contacts (up to 6 per residue) |
+| `Corr_E`, `E0` | Energy with a temperature-dependent potential; equal to `Etot` unless one is enabled |
+| `fsolvHN` | Hydrophobic residues fully surrounded by water |
+| `surfHN` | Hydrophobic residues partly surrounded by water |
+
+`fsolvHN + surfHN = solvHN`. The header labels the last two columns `fsolvHN` and
+`surfHN`; the code writes `solvatedHN` and `surfaceHN` (`EnergyMap.cpp`, `WaterStats.hpp`).
+
+### stats_N<rank>.tab
+
+```
+BETA  3.33333      ← 1/T (one block per temperature)
+54    120.5        ← value  weight
+55    310.2
+```
+
+For every attempted move, the simulator adds a total weight of 1, split between
+the current state and the proposed one in proportion to the acceptance
+probability. Each row's weight is therefore the time spent at that value.
+Dividing by the sum gives the probability P(x). Values with zero weight are left
+out.
+
+x is `Cext`, the number of contacts between chains.
 
 
 ## Flags added to the forks

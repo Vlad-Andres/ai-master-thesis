@@ -27,7 +27,7 @@ case "${1:-}" in
   lw)
     exe="$bin_dir/grancan"
     pdb="$ext/LatticeWater/LatticeFiles/PDB/P1_Fixed.pdb"
-    common=(-i "$pdb" -native "$pdb" -aa "$ext/LatticeWater/LatticeFiles/input/aa_water2.txt" -indxWater 20)
+    common=(-i "$pdb" -aa "$ext/LatticeWater/LatticeFiles/input/aa_water2.txt" -indxWater 20)
     ;;
   *) echo "usage: $0 hb|lw" >&2; exit 2 ;;
 esac

@@ -83,10 +83,6 @@ fi
 if [ -n "$water_index" ] && [ "$water_index" != none ]; then
   args+=(-indxWater "$water_index")
 fi
-# LatticeWater crashes at the end of a run without a native structure.
-if [ "$sim" = latticewater ] && [[ " $* " != *" -native "* ]]; then
-  args+=(-native "$structure")
-fi
 
 launch=("$exe")
 [ "$np" -gt 1 ] && launch=("$mpirun" -np "$np" "$exe")
